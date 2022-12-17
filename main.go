@@ -1,57 +1,67 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"os"
-	"strings"
+	"time"
 
-	"github.com/marcusolsson/tui-go"
-	"github.com/nlopes/slack"
-	"github.com/chrisgeidi/go-twitter/twitter"
-	"github.com/thoas/go-funk"
-	"github.com/unifon/go-sentiment"
+	"github.com/cdipaolo/sentiment"
+	"github.com/dghubble/go-twitter/twitter"
+	"github.com/dghubble/oauth1"
 )
 
 func main() {
-	// Replace these with your own Twitter API keys and secrets
+
+	// Set the timer to run every 10 seconds
+	duration := time.Duration(10) * time.Second
+	timer := time.NewTicker(duration)
+
+	// Read API key and secret from environment variables
 	consumerKey := os.Getenv("TWITTER_CONSUMER_KEY")
 	consumerSecret := os.Getenv("TWITTER_CONSUMER_SECRET")
 	accessToken := os.Getenv("TWITTER_ACCESS_TOKEN")
 	accessSecret := os.Getenv("TWITTER_ACCESS_SECRET")
 
-	// Initialize the Twitter client
-	client, err := twitter.NewClient(consumerKey, consumerSecret, accessToken, accessSecret)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Create an OAuth1 config
+	config := oauth1.NewConfig(consumerKey, consumerSecret)
+	// Create an OAuth1 token
+	token := oauth1.NewToken(accessToken, accessSecret)
 
-	// Initialize the sentiment analysis engine
-	engine, err := sentiment.New()
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Create a Twitter client
+	client := twitter.NewClient(config.Client(oauth1.NoContext, token))
 
-	// Search for tweets that contain the keywords "Christmas" and "Snow"
-	searchParams := &twitter.SearchTweetParams{
-		Query: "Christmas Snow",
-	}
-	searchResult, _, err := client.Search.Tweets(searchParams)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Go through the tweets and perform sentiment analysis on each one
-	for _, tweet := range searchResult.Statuses {
-		analysis, err := engine.Analyze(tweet.Text)
+	for {
+		// Search for tweets containing the keywords "Christmas" and "snow"
+		search, _, err := client.Search.Tweets(&twitter.SearchTweetParams{
+			Query: "Christmas snow",
+		})
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println("Error searching tweets:", err)
+			return
 		}
 
-		// If the sentiment is negative, print the tweet to the console
-		if analysis.Score < 0 {
-			fmt.Println(tweet.Text)
+		// Create a new sentiment analyzer
+		model, err := sentiment.Restore()
+		if err != nil {
+			fmt.Println("Error creating sentiment analyzer:", err)
+			return
 		}
+
+		// Iterate through the search results and classify the sentiment of each tweet
+		for _, tweet := range search.Statuses {
+
+			// fmt.Println(tweet.Text)
+
+			// Use the sentiment analyzer to classify the sentiment of the tweet
+			score := model.SentimentAnalysis(tweet.Text, sentiment.English).Score
+
+			// If the sentiment is negative, print the tweet to the console
+			if score == 0 {
+				fmt.Println(tweet.Text)
+			}
+		}
+
+		// Wait for the timer to expire before searching for more tweets
+		<-timer.C
 	}
 }
